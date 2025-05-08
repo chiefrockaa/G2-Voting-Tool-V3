@@ -10,14 +10,25 @@ st.title("🔌 Verbindungstest zu Google Sheets")
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 raw_key = st.secrets["gcp_service_account"]
 
-# Falls du \\n gespeichert hast, wandle sie in echte Zeilenumbrüche
+import json
+import streamlit as st
+from oauth2client.service_account import ServiceAccountCredentials
+
+# Lade JSON korrekt, egal ob string oder dict
+raw_key = st.secrets["gcp_service_account"]
+
 if isinstance(raw_key, str):
-    cleaned = raw_key.replace("\\n", "\\n").replace("\\\\n", "\\n").replace("\\n", "\n")
+    # Wandelt \\n in echte \n-Zeilenumbrüche um
+    cleaned = raw_key.encode().decode("unicode_escape")
     service_json = json.loads(cleaned)
 else:
     service_json = raw_key
+
+# Google Sheets Setup
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_dict(service_json, scope)
 client = gspread.authorize(creds)
+
 
 # Test: Liste alle Sheets
 try:
