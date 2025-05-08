@@ -8,7 +8,14 @@ st.title("🔌 Verbindungstest zu Google Sheets")
 
 # Verbindung herstellen
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-service_json = json.load(StringIO(st.secrets["gcp_service_account"]))
+raw_key = st.secrets["gcp_service_account"]
+
+# Falls du \\n gespeichert hast, wandle sie in echte Zeilenumbrüche
+if isinstance(raw_key, str):
+    cleaned = raw_key.replace("\\n", "\\n").replace("\\\\n", "\\n").replace("\\n", "\n")
+    service_json = json.loads(cleaned)
+else:
+    service_json = raw_key
 creds = ServiceAccountCredentials.from_json_keyfile_dict(service_json, scope)
 client = gspread.authorize(creds)
 
