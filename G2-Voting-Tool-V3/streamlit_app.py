@@ -1,4 +1,27 @@
 import streamlit as st
+import gspread
+import json
+from io import StringIO
+from oauth2client.service_account import ServiceAccountCredentials
+
+st.title("🔌 Verbindungstest zu Google Sheets")
+
+# Verbindung herstellen
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+service_json = json.load(StringIO(st.secrets["gcp_service_account"]))
+creds = ServiceAccountCredentials.from_json_keyfile_dict(service_json, scope)
+client = gspread.authorize(creds)
+
+# Test: Liste alle Sheets
+try:
+    spreadsheet = client.open("G2 Voting Tool")  # <- deinen echten Sheet-Namen eintragen
+    worksheets = spreadsheet.worksheets()
+    st.success("✅ Verbindung erfolgreich!")
+    st.write("📄 Gefundene Tabs im Sheet:", [ws.title for ws in worksheets])
+except Exception as e:
+    st.error("❌ Verbindung fehlgeschlagen:")
+    st.code(str(e))
+import streamlit as st
 import pandas as pd
 from collections import defaultdict
 import os
