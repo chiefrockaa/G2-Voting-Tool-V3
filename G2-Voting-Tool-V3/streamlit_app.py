@@ -1,98 +1,61 @@
-import streamlit as st  # ✅ nötig für alles mit "st."
-
-# Debug-Ausgabe für das Secret
-st.subheader("🛠 Debug: Secret-Vorschau")
-st.code(repr(st.secrets["gcp_service_account"]))
-
+import streamlit as st
+import pandas as pd
 import gspread
 import json
-from io import StringIO
 from oauth2client.service_account import ServiceAccountCredentials
+from collections import defaultdict
+from io import BytesIO
 
-st.title("🔌 Verbindungstest zu Google Sheets")
+st.set_page_config(page_title="G2 Voting Tool", layout="centered")
+st.title("🔝 G2 Voting Tool – Google Sheets Only")
 
-# Verbindung herstellen
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-raw_key = st.secrets["gcp_service_account"]
-
-import streamlit as st
-import json
-from oauth2client.service_account import ServiceAccountCredentials
-
-# ✅ Korrekt aus secrets laden (als String)
-raw_key = st.secrets["gcp_service_account"]
-
-# ✅ JSON sicher parsen
+# ✅ Secrets laden
 try:
-    service_json = json.loads(raw_key)
+    service_json = json.loads(st.secrets["gcp_service_account"])
 except json.JSONDecodeError as e:
-    st.error("❌ JSON konnte nicht geladen werden. Wahrscheinlich sind \\n nicht korrekt escaped.")
+    st.error("❌ JSON konnte nicht geladen werden. Bitte prüfe die Formatierung.")
     st.code(str(e))
     st.stop()
 
-# ✅ Google Sheets Verbindung herstellen
+# ✅ Verbindung zu Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_dict(service_json, scope)
 client = gspread.authorize(creds)
 
+SHEET_NAME = "G2_Votings_DB"  # Dein Google Sheet Name
+spreadsheet = client.open(SHEET_NAME)
 
-# Test: Liste alle Sheets
-try:
-    spreadsheet = client.open("G2 Voting Tool")  # <- deinen echten Sheet-Namen eintragen
-    worksheets = spreadsheet.worksheets()
-    st.success("✅ Verbindung erfolgreich!")
-    st.write("📄 Gefundene Tabs im Sheet:", [ws.title for ws in worksheets])
-except Exception as e:
-    st.error("❌ Verbindung fehlgeschlagen:")
-    st.code(str(e))
-import streamlit as st
-import pandas as pd
-from collections import defaultdict
-import os
-from io import BytesIO
+# Alle existierenden Votings (Tabs)
+tabs = spreadsheet.worksheets()
+tab_names = [t.title for t in tabs]
 
-st.title("🔝 G2 Voting Tool V3")
-
-DATA_DIR = "votings"
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# Bestehende Votings
-bestehende_votings = [f.replace(".csv", "") for f in os.listdir(DATA_DIR) if f.endswith(".csv")]
-
-# Auswahl oder neues Voting
+# Voting Auswahl oder Erstellung
 st.sidebar.header("🗳️ Voting auswählen oder erstellen")
-voting_wahl = st.sidebar.selectbox("Wähle ein Voting", bestehende_votings + ["Neues Voting erstellen"])
+voting_wahl = st.sidebar.selectbox("Wähle ein Voting", tab_names + ["Neues Voting erstellen"])
 
-# Neues Voting erstellen
 if voting_wahl == "Neues Voting erstellen":
     neuer_voting_name = st.sidebar.text_input("Name für neues Voting")
     if st.sidebar.button("Erstellen"):
         if neuer_voting_name.strip():
-            new_path = os.path.join(DATA_DIR, f"{neuer_voting_name.strip()}.csv")
-            open(new_path, "a").close()
-            st.success(f"Voting '{neuer_voting_name}' wurde erstellt. Starte neu, um es auszuwählen.")
+            spreadsheet.add_worksheet(title=neuer_voting_name.strip(), rows="100", cols="12")
+            st.success(f"Voting '{neuer_voting_name}' wurde erstellt. Lade die Seite neu.")
             st.stop()
         else:
             st.sidebar.warning("Bitte gib einen Namen ein.")
     st.stop()
 else:
-    voting_name = voting_wahl
-    csv_path = os.path.join(DATA_DIR, f"{voting_name}.csv")
+    sheet = spreadsheet.worksheet(voting_wahl)
 
-# Verwaltung: zurücksetzen oder löschen
+# Verwaltung
 st.sidebar.subheader("🧹 Verwaltung")
-if st.sidebar.button("Voting zurücksetzen (leeren)"):
-    open(csv_path, "w").close()
-    st.sidebar.success(f"Inhalte von '{voting_name}' wurden gelöscht.")
-    st.stop()
+if st.sidebar.checkbox("⚠️ Ich will dieses Voting wirklich zurücksetzen"):
+    if st.sidebar.button("Voting zurücksetzen (leeren)"):
+        sheet.clear()
+        st.sidebar.success(f"Voting '{voting_wahl}' wurde geleert.")
+        st.stop()
 
-if st.sidebar.button("Voting komplett löschen"):
-    os.remove(csv_path)
-    st.sidebar.success(f"Voting '{voting_name}' wurde gelöscht. Starte neu.")
-    st.stop()
-
-# Eingabeformular
-st.header(f"📋 Voting: {voting_name}")
+# Eingabe
+st.header(f"📋 Voting: {voting_wahl}")
 name = st.text_input("Dein Name")
 spiele = [st.text_input(f"Platz {i+1} ({10 - i} Punkte)", key=i) for i in range(10)]
 
@@ -102,45 +65,53 @@ if st.button("Einreichen"):
     elif not any(spiele):
         st.warning("Bitte gib mindestens ein Spiel an.")
     else:
-        with open(csv_path, "a") as f:
-            f.write(name + "," + ",".join(spiele) + "\n")
-        st.success("Danke! Deine Stimme wurde gespeichert.")
+        try:
+            sheet.append_row([name] + spiele)
+            st.success("✅ Stimme gespeichert!")
+        except Exception as e:
+            st.error("❌ Fehler beim Speichern der Stimme.")
+            st.code(str(e))
 
-# Gesamtranking anzeigen
+# Gesamtranking
 if st.checkbox("📊 Gesamtranking anzeigen"):
-    if not os.path.exists(csv_path) or os.stat(csv_path).st_size == 0:
-        st.info("Noch keine Daten vorhanden.")
-    else:
-        df = pd.read_csv(csv_path, header=None)
-        spiele_punkte = defaultdict(int)
-        spiele_quellen = defaultdict(list)
+    try:
+        rows = sheet.get_all_values()
+        if len(rows) < 1:
+            st.info("Noch keine Daten vorhanden.")
+        else:
+            df = pd.DataFrame(rows)
+            df.columns = [f"Platz {i}" if i > 0 else "Name" for i in range(len(df.columns))]
+            spiele_punkte = defaultdict(int)
+            spiele_quellen = defaultdict(list)
 
-        for _, row in df.iterrows():
-            voter = row[0]
-            for i, spiel in enumerate(row[1:]):
-                if pd.notna(spiel) and spiel.strip():
-                    spiel_clean = spiel.strip()
-                    punkte = 10 - i
-                    spiele_punkte[spiel_clean] += punkte
-                    spiele_quellen[spiel_clean].append(f"{voter} ({punkte} P)")
+            for _, row in df.iterrows():
+                voter = row[0]
+                for i, spiel in enumerate(row[1:]):
+                    if spiel.strip():
+                        punkte = 10 - i
+                        spiele_punkte[spiel.strip()] += punkte
+                        spiele_quellen[spiel.strip()].append(f"{voter} ({punkte} P)")
 
-        ranking = sorted(spiele_punkte.items(), key=lambda x: x[1], reverse=True)
+            ranking = sorted(spiele_punkte.items(), key=lambda x: x[1], reverse=True)
+            ranking_df = pd.DataFrame([
+                {
+                    "Spiel": spiel,
+                    "Gesamtpunkte": punkte,
+                    "Beitragsquellen": ", ".join(spiele_quellen[spiel])
+                }
+                for spiel, punkte in ranking
+            ])
 
-        ranking_df = pd.DataFrame([
-            {
-                "Spiel": spiel,
-                "Gesamtpunkte": punkte,
-                "Beitragsquellen": ", ".join(spiele_quellen[spiel])
-            }
-            for spiel, punkte in ranking
-        ])
+            st.subheader("🏆 Gesamtranking")
+            st.dataframe(ranking_df, use_container_width=True)
 
-        st.subheader("🏆 Gesamtranking")
-        st.dataframe(ranking_df, use_container_width=True)
+            # Excel-Export
+            st.markdown("### ⬇️ Ranking exportieren")
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                ranking_df.to_excel(writer, index=False, sheet_name="Gesamtranking")
+            st.download_button("📥 Excel herunterladen", data=output.getvalue(), file_name=f"{voting_wahl}_ranking.xlsx")
 
-        # Exportfunktion
-        st.markdown("### ⬇️ Ranking exportieren")
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            ranking_df.to_excel(writer, index=False, sheet_name="Gesamtranking")
-        st.download_button("📥 Excel herunterladen", data=output.getvalue(), file_name=f"{voting_name}_ranking.xlsx")
+    except Exception as e:
+        st.error("❌ Fehler beim Abrufen der Daten.")
+        st.code(str(e))
