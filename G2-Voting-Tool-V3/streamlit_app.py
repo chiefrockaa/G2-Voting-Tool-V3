@@ -1,3 +1,5 @@
+st.subheader("🛠 Debug: Secret-Vorschau")
+st.code(repr(st.secrets["gcp_service_account"]))
 import streamlit as st
 import gspread
 import json
