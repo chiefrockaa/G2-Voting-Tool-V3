@@ -15,21 +15,22 @@ st.title("🔌 Verbindungstest zu Google Sheets")
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 raw_key = st.secrets["gcp_service_account"]
 
-import json
 import streamlit as st
+import json
 from oauth2client.service_account import ServiceAccountCredentials
 
-# Lade JSON korrekt, egal ob string oder dict
+# ✅ Korrekt aus secrets laden (als String)
 raw_key = st.secrets["gcp_service_account"]
 
-if isinstance(raw_key, str):
-    # Wandelt \\n in echte \n-Zeilenumbrüche um
-    cleaned = raw_key.encode().decode("unicode_escape")
-    service_json = json.loads(cleaned)
-else:
-    service_json = raw_key
+# ✅ JSON sicher parsen
+try:
+    service_json = json.loads(raw_key)
+except json.JSONDecodeError as e:
+    st.error("❌ JSON konnte nicht geladen werden. Wahrscheinlich sind \\n nicht korrekt escaped.")
+    st.code(str(e))
+    st.stop()
 
-# Google Sheets Setup
+# ✅ Google Sheets Verbindung herstellen
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_dict(service_json, scope)
 client = gspread.authorize(creds)
